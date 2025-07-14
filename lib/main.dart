@@ -1,12 +1,12 @@
 // File: lib/main.dart
-
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-
 import 'package:image/image.dart' as img;
 import 'package:test_lyna_cam2/live_cam.dart';
 import 'package:test_lyna_cam2/single_image.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:test_lyna_cam2/yolo_screen.dart';
 
 // Stores the list of available cameras (e.g., front and back) to initialize the camera stream.
 late List<CameraDescription> cameras;
@@ -17,13 +17,19 @@ const String modelPath = setFloat16
     : 'assets/yolo11s_float32.tflite';
 
 // const String modelPath = 'assets/yolo11s_float16.tflite';
-
 const String labelsPath = 'assets/labels.txt';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   cameras = await availableCameras(); // Load available cameras
+  await requestPermissions();
   runApp(const MyApp()); // Launch the app
+}
+
+Future<void> requestPermissions() async {
+  await Permission.camera.request();
+  await Permission.storage.request();
+  await Permission.manageExternalStorage.request();
 }
 
 class MyApp extends StatelessWidget {
@@ -33,9 +39,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: showSingleImage
-          ? ImageDetectionScreen()
-          : ObjectDetectionPage(), // Show the main detection page
+      // home: ImageDetectionScreen(),  // single_image.dart
+      // home: ObjectDetectionPage(), // live_cam.dart
+      home: HomePage(), // yolo_screen.dart
     );
   }
 }
