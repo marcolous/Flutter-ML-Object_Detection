@@ -1,14 +1,12 @@
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
-import 'package:test_lyna_cam2/models/yolo_model.dart';
-import 'package:test_lyna_cam2/utils/bbox.dart';
-import 'package:test_lyna_cam2/utils/labels.dart';
-// import 'package:yolo_flutter/bbox.dart';
-// import 'package:yolo_flutter/labels.dart';
-// import 'package:yolo_flutter/yolo.dart';
+import 'package:image/image.dart' as img; // used for image decoding
+import 'package:image_picker/image_picker.dart'; // used to capture image from camera
+import 'package:test_lyna_cam2/main.dart'; // imports your modelPath
+import 'package:test_lyna_cam2/models/yolo_model.dart'; // YOLO model wrapper
+import 'package:test_lyna_cam2/utils/bbox.dart'; // widget for drawing bounding boxes
+import 'package:test_lyna_cam2/utils/labels.dart'; // list of COCO labels
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,46 +16,52 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // YOLO model parameters
   static const inModelWidth = 640;
   static const inModelHeight = 640;
   static const numClasses = 80;
-
   static const double maxImageWidgetHeight = 400;
 
+  // Initialize the YOLO model
   final YoloModel model = YoloModel(
-    'assets/models/yolov11n.tflite',
+    modelPath,
     inModelWidth,
     inModelHeight,
     numClasses,
   );
+
   File? imageFile;
 
+  // Postprocessing thresholds
   double confidenceThreshold = 0.4;
   double iouThreshold = 0.1;
   bool agnosticNMS = false;
 
+  // YOLO output
   List<List<double>>? inferenceOutput;
   List<int> classes = [];
   List<List<double>> bboxes = [];
   List<double> scores = [];
 
+  // Original image dimensions
   int? imageWidth;
   int? imageHeight;
 
   @override
   void initState() {
     super.initState();
-    model.init();
+    model.init(); // Load model
   }
 
   @override
   Widget build(BuildContext context) {
+    // Generate random colors for each class
     final bboxesColors = List<Color>.generate(
       numClasses,
       (_) => Color((Random().nextDouble() * 0xFFFFFF).toInt()).withAlpha(255),
     );
 
-    final ImagePicker picker = ImagePicker();
+    final ImagePicker picker = ImagePicker(); // Picker instance
 
     final double displayWidth = MediaQuery.of(context).size.width;
 
@@ -65,12 +69,14 @@ class _HomePageState extends State<HomePage> {
 
     double resizeFactor = 1;
 
+    // Calculate how much to resize image to fit screen
     if (imageWidth != null && imageHeight != null) {
       double k1 = displayWidth / imageWidth!;
       double k2 = maxImageWidgetHeight / imageHeight!;
       resizeFactor = min(k1, k2);
     }
 
+    // Convert bounding box data to widgets
     List<Bbox> bboxesWidgets = [];
     for (int i = 0; i < bboxes.length; i++) {
       final box = bboxes[i];
@@ -92,6 +98,7 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(title: const Text('YOLO')),
       body: ListView(
         children: [
+          // Image picker and display area
           InkWell(
             onTap: () async {
               final XFile? newImageFile =
@@ -100,6 +107,8 @@ class _HomePageState extends State<HomePage> {
                 setState(() {
                   imageFile = File(newImageFile.path);
                 });
+
+                // Decode image and run inference
                 final image =
                     img.decodeImage(await newImageFile.readAsBytes())!;
                 imageWidth = image.width;
@@ -113,14 +122,12 @@ class _HomePageState extends State<HomePage> {
               child: Center(
                 child: Stack(
                   children: [
+                    // Show placeholder or image
                     if (imageFile == null)
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
-                            Icons.file_open_outlined,
-                            size: 80,
-                          ),
+                          const Icon(Icons.file_open_outlined, size: 80),
                           Text(
                             'Pick an image',
                             style: Theme.of(context).textTheme.headlineMedium,
@@ -129,13 +136,17 @@ class _HomePageState extends State<HomePage> {
                       )
                     else
                       Image.file(imageFile!),
+                    // Overlay bounding boxes
                     ...bboxesWidgets,
                   ],
                 ),
               ),
             ),
           ),
+
           const SizedBox(height: 30),
+
+          // Confidence threshold slider
           Padding(
             padding: textPadding,
             child: Row(
@@ -173,7 +184,10 @@ class _HomePageState extends State<HomePage> {
               });
             },
           ),
+
           const SizedBox(height: 8),
+
+          // IoU threshold slider
           Padding(
             padding: textPadding,
             child: Row(
@@ -211,6 +225,8 @@ class _HomePageState extends State<HomePage> {
               });
             },
           ),
+
+          // Agnostic NMS toggle
           SwitchListTile(
             value: agnosticNMS,
             title: Text(
@@ -234,10 +250,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Run postprocessing (NMS) and update the detected boxes, scores, and classes
   void updatePostprocess() {
-    if (inferenceOutput == null) {
-      return;
-    }
+    if (inferenceOutput == null) return;
+
     final (newClasses, newBboxes, newScores) = model.postprocess(
       inferenceOutput!,
       imageWidth!,
@@ -246,7 +262,9 @@ class _HomePageState extends State<HomePage> {
       iouThreshold: iouThreshold,
       agnostic: agnosticNMS,
     );
+
     debugPrint('Detected ${newBboxes.length} bboxes');
+
     setState(() {
       classes = newClasses;
       bboxes = newBboxes;
