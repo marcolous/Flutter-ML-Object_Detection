@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img; // used for image decoding
 import 'package:image_picker/image_picker.dart'; // used to capture image from camera
@@ -20,7 +21,7 @@ class _HomePageState extends State<HomePage> {
   static const inModelWidth = 640;
   static const inModelHeight = 640;
   static const numClasses = 80;
-  static const double maxImageWidgetHeight = 400;
+  // static const double maxImageWidgetHeight = 400;
 
   // Initialize the YOLO model
   final YoloModel model = YoloModel(
@@ -55,6 +56,9 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    double maxImageWidgetHeight = MediaQuery.of(context).size.height;
+    double maxImageWidgetWidth = MediaQuery.of(context).size.width;
+
     // Generate random colors for each class
     final bboxesColors = List<Color>.generate(
       numClasses,
@@ -119,6 +123,7 @@ class _HomePageState extends State<HomePage> {
             },
             child: SizedBox(
               height: maxImageWidgetHeight,
+              width: maxImageWidgetWidth,
               child: Center(
                 child: Stack(
                   children: [
@@ -138,6 +143,7 @@ class _HomePageState extends State<HomePage> {
                       Image.file(imageFile!),
                     // Overlay bounding boxes
                     ...bboxesWidgets,
+                    const Nutritionwidget(),
                   ],
                 ),
               ),
@@ -147,104 +153,104 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 30),
 
           // Confidence threshold slider
-          Padding(
-            padding: textPadding,
-            child: Row(
-              children: [
-                Text(
-                  'Confidence threshold:',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${(confidenceThreshold * 100).toStringAsFixed(0)}%',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: textPadding,
-            child: Text(
-              'If high, only the clearly recognizable objects will be detected. If low even not clear objects will be detected.',
-            ),
-          ),
-          Slider(
-            value: confidenceThreshold,
-            min: 0,
-            max: 1,
-            divisions: 100,
-            onChanged: (value) {
-              setState(() {
-                confidenceThreshold = value;
-                updatePostprocess();
-              });
-            },
-          ),
+          // Padding(
+          //   padding: textPadding,
+          //   child: Row(
+          //     children: [
+          //       Text(
+          //         'Confidence threshold:',
+          //         style: Theme.of(context).textTheme.bodyLarge,
+          //       ),
+          //       const SizedBox(width: 8),
+          //       Text(
+          //         '${(confidenceThreshold * 100).toStringAsFixed(0)}%',
+          //         style: Theme.of(context)
+          //             .textTheme
+          //             .bodyLarge
+          //             ?.copyWith(fontWeight: FontWeight.bold),
+          //       ),
+          //     ],
+          //   ),
+          // ),
+          // const Padding(
+          //   padding: textPadding,
+          //   child: Text(
+          //     'If high, only the clearly recognizable objects will be detected. If low even not clear objects will be detected.',
+          //   ),
+          // ),
+          // Slider(
+          //   value: confidenceThreshold,
+          //   min: 0,
+          //   max: 1,
+          //   divisions: 100,
+          //   onChanged: (value) {
+          //     setState(() {
+          //       confidenceThreshold = value;
+          //       updatePostprocess();
+          //     });
+          //   },
+          // ),
 
-          const SizedBox(height: 8),
+          // const SizedBox(height: 8),
 
-          // IoU threshold slider
-          Padding(
-            padding: textPadding,
-            child: Row(
-              children: [
-                Text(
-                  'IoU threshold',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${(iouThreshold * 100).toStringAsFixed(0)}%',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: textPadding,
-            child: Text(
-              'If high, overlapped objects will be detected. If low, only separated objects will be correctly detected.',
-            ),
-          ),
-          Slider(
-            value: iouThreshold,
-            min: 0,
-            max: 1,
-            divisions: 100,
-            onChanged: (value) {
-              setState(() {
-                iouThreshold = value;
-                updatePostprocess();
-              });
-            },
-          ),
+          // // IoU threshold slider
+          // Padding(
+          //   padding: textPadding,
+          //   child: Row(
+          //     children: [
+          //       Text(
+          //         'IoU threshold',
+          //         style: Theme.of(context).textTheme.bodyLarge,
+          //       ),
+          //       const SizedBox(width: 8),
+          //       Text(
+          //         '${(iouThreshold * 100).toStringAsFixed(0)}%',
+          //         style: Theme.of(context)
+          //             .textTheme
+          //             .bodyLarge
+          //             ?.copyWith(fontWeight: FontWeight.bold),
+          //       ),
+          //     ],
+          //   ),
+          // ),
+          // const Padding(
+          //   padding: textPadding,
+          //   child: Text(
+          //     'If high, overlapped objects will be detected. If low, only separated objects will be correctly detected.',
+          //   ),
+          // ),
+          // Slider(
+          //   value: iouThreshold,
+          //   min: 0,
+          //   max: 1,
+          //   divisions: 100,
+          //   onChanged: (value) {
+          //     setState(() {
+          //       iouThreshold = value;
+          //       updatePostprocess();
+          //     });
+          //   },
+          // ),
 
-          // Agnostic NMS toggle
-          SwitchListTile(
-            value: agnosticNMS,
-            title: Text(
-              'Agnostic NMS',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            subtitle: Text(
-              agnosticNMS
-                  ? 'Treat all the detections as the same object'
-                  : 'Detections with different labels are different objects',
-            ),
-            onChanged: (value) {
-              setState(() {
-                agnosticNMS = value;
-                updatePostprocess();
-              });
-            },
-          ),
+          // // Agnostic NMS toggle
+          // SwitchListTile(
+          //   value: agnosticNMS,
+          //   title: Text(
+          //     'Agnostic NMS',
+          //     style: Theme.of(context).textTheme.bodyLarge,
+          //   ),
+          //   subtitle: Text(
+          //     agnosticNMS
+          //         ? 'Treat all the detections as the same object'
+          //         : 'Detections with different labels are different objects',
+          //   ),
+          //   onChanged: (value) {
+          //     setState(() {
+          //       agnosticNMS = value;
+          //       updatePostprocess();
+          //     });
+          //   },
+          // ),
         ],
       ),
     );
@@ -270,5 +276,54 @@ class _HomePageState extends State<HomePage> {
       bboxes = newBboxes;
       scores = newScores;
     });
+  }
+}
+
+class Nutritionwidget extends StatelessWidget {
+  const Nutritionwidget({super.key});
+
+  Widget rowItem() {
+    return const Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Grilled Chicken',
+          style: TextStyle(color: Colors.white),
+        ),
+        SizedBox(width: 5),
+        Text(
+          '~250 cal',
+          style: TextStyle(color: Color.fromARGB(255, 146, 103, 221)),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      bottom: 30,
+      left: 70,
+      right: 70,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemBuilder: (context, index) => rowItem(),
+              separatorBuilder: (context, index) => const SizedBox(height: 10),
+              itemCount: 3,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

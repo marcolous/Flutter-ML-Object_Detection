@@ -22,6 +22,7 @@ class Bbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final style = TextStyle(color: Colors.white, fontSize: 16);
     return Positioned(
       top: y - height / 2,
       left: x - width / 2,
@@ -40,8 +41,14 @@ class Bbox extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Text(label),
-                  Text(' ${(score * 100).toStringAsFixed(0)}%'),
+                  Text(
+                    label,
+                    style: style,
+                  ),
+                  Text(
+                    ' ${(score * 100).toStringAsFixed(0)}%',
+                    style: style,
+                  ),
                 ],
               ),
             ),
