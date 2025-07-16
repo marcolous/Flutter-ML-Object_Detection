@@ -4,7 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img; // used for image decoding
 import 'package:image_picker/image_picker.dart'; // used to capture image from camera
+import 'package:provider/provider.dart';
 import 'package:test_lyna_cam2/main.dart'; // imports your modelPath
+import 'package:test_lyna_cam2/manager/app_provider.dart';
+import 'package:test_lyna_cam2/models/nutrient_model.dart';
 import 'package:test_lyna_cam2/models/yolo_model.dart'; // YOLO model wrapper
 import 'package:test_lyna_cam2/utils/bbox.dart'; // widget for drawing bounding boxes
 import 'package:test_lyna_cam2/utils/labels.dart'; // list of COCO labels
@@ -37,12 +40,26 @@ class _HomePageState extends State<HomePage> {
   double confidenceThreshold = 0.4;
   double iouThreshold = 0.1;
   bool agnosticNMS = false;
+  double resizeFactor = 1;
+  late double displayWidth;
+  late double maxImageWidgetHeight;
+  late double maxImageWidgetWidth;
+
+  double score = -1;
+  String label = '';
 
   // YOLO output
   List<List<double>>? inferenceOutput;
   List<int> classes = [];
   List<List<double>> bboxes = [];
   List<double> scores = [];
+  List<Bbox> bboxesWidgets = [];
+
+  // Generate random colors for each class
+  final bboxesColors = List<Color>.generate(
+    numClasses,
+    (_) => Color((Random().nextDouble() * 0xFFFFFF).toInt()).withAlpha(255),
+  );
 
   // Original image dimensions
   int? imageWidth;
@@ -52,59 +69,39 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     model.init(); // Load model
+    // displayWidth = MediaQuery.of(context).size.width;
+    // maxImageWidgetHeight = MediaQuery.of(context).size.height;
+    // maxImageWidgetWidth = MediaQuery.of(context).size.width;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    displayWidth = MediaQuery.of(context).size.width;
+    maxImageWidgetHeight = MediaQuery.of(context).size.height;
+    maxImageWidgetWidth = MediaQuery.of(context).size.width;
+  }
+
+  Future<void> getNutritions(String label) async {
+    await context.read<AppProvider>().getNutritionsFdcId(label);
   }
 
   @override
   Widget build(BuildContext context) {
-    double maxImageWidgetHeight = MediaQuery.of(context).size.height;
-    double maxImageWidgetWidth = MediaQuery.of(context).size.width;
-
-    // Generate random colors for each class
-    final bboxesColors = List<Color>.generate(
-      numClasses,
-      (_) => Color((Random().nextDouble() * 0xFFFFFF).toInt()).withAlpha(255),
-    );
-
     final ImagePicker picker = ImagePicker(); // Picker instance
-
-    final double displayWidth = MediaQuery.of(context).size.width;
 
     const textPadding = EdgeInsets.symmetric(horizontal: 16);
 
-    double resizeFactor = 1;
-
-    // Calculate how much to resize image to fit screen
-    if (imageWidth != null && imageHeight != null) {
-      double k1 = displayWidth / imageWidth!;
-      double k2 = maxImageWidgetHeight / imageHeight!;
-      resizeFactor = min(k1, k2);
-    }
-
     // Convert bounding box data to widgets
-    List<Bbox> bboxesWidgets = [];
-    for (int i = 0; i < bboxes.length; i++) {
-      final box = bboxes[i];
-      final boxClass = classes[i];
-      bboxesWidgets.add(
-        Bbox(
-          box[0] * resizeFactor,
-          box[1] * resizeFactor,
-          box[2] * resizeFactor,
-          box[3] * resizeFactor,
-          labels[boxClass],
-          scores[i],
-          bboxesColors[boxClass],
-        ),
-      );
-    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('YOLO')),
-      body: ListView(
+      body: Stack(
         children: [
           // Image picker and display area
           InkWell(
             onTap: () async {
+              context.read<AppProvider>().clearLabelNutrients();
               final XFile? newImageFile =
                   await picker.pickImage(source: ImageSource.camera);
               if (newImageFile != null) {
@@ -118,7 +115,8 @@ class _HomePageState extends State<HomePage> {
                 imageWidth = image.width;
                 imageHeight = image.height;
                 inferenceOutput = model.infer(image);
-                updatePostprocess();
+                await updatePostprocess();
+                await getNutritions(label);
               }
             },
             child: SizedBox(
@@ -143,7 +141,6 @@ class _HomePageState extends State<HomePage> {
                       Image.file(imageFile!),
                     // Overlay bounding boxes
                     ...bboxesWidgets,
-                    const Nutritionwidget(),
                   ],
                 ),
               ),
@@ -151,6 +148,12 @@ class _HomePageState extends State<HomePage> {
           ),
 
           const SizedBox(height: 30),
+          Positioned(
+            bottom: 30,
+            left: 70,
+            right: 70,
+            child: Nutritionwidget(title: label),
+          ),
 
           // Confidence threshold slider
           // Padding(
@@ -257,7 +260,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Run postprocessing (NMS) and update the detected boxes, scores, and classes
-  void updatePostprocess() {
+  Future<void> updatePostprocess() async {
     if (inferenceOutput == null) return;
 
     final (newClasses, newBboxes, newScores) = model.postprocess(
@@ -271,29 +274,66 @@ class _HomePageState extends State<HomePage> {
 
     debugPrint('Detected ${newBboxes.length} bboxes');
 
+    final newBboxWidgets = <Bbox>[];
+    double maxScore = -1;
+    String bestLabel = '';
+
+    // Calculate how much to resize image to fit screen
+    if (imageWidth != null && imageHeight != null) {
+      double k1 = displayWidth / imageWidth!;
+      double k2 = maxImageWidgetHeight / imageHeight!;
+      resizeFactor = min(k1, k2);
+    }
+
+    for (int i = 0; i < newBboxes.length; i++) {
+      final box = newBboxes[i];
+      final boxClass = newClasses[i];
+
+      newBboxWidgets.add(
+        Bbox(
+          box[0] * resizeFactor,
+          box[1] * resizeFactor,
+          box[2] * resizeFactor,
+          box[3] * resizeFactor,
+          labels[boxClass],
+          newScores[i],
+          bboxesColors[boxClass],
+        ),
+      );
+
+      if (newScores[i] > maxScore) {
+        maxScore = newScores[i];
+        bestLabel = labels[boxClass];
+      }
+    }
+
     setState(() {
       classes = newClasses;
       bboxes = newBboxes;
       scores = newScores;
+      bboxesWidgets = newBboxWidgets;
+      score = maxScore;
+      label = bestLabel;
     });
   }
 }
 
 class Nutritionwidget extends StatelessWidget {
-  const Nutritionwidget({super.key});
+  const Nutritionwidget({super.key, required this.title});
+  final String title;
 
-  Widget rowItem() {
-    return const Row(
+  Widget rowItem(String label, String value) {
+    return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          'Grilled Chicken',
-          style: TextStyle(color: Colors.white),
+          label,
+          style: const TextStyle(color: Colors.white),
         ),
-        SizedBox(width: 5),
+        const SizedBox(width: 5),
         Text(
-          '~250 cal',
-          style: TextStyle(color: Color.fromARGB(255, 146, 103, 221)),
+          '$value g',
+          style: const TextStyle(color: Color(0xffb8aaff)),
         ),
       ],
     );
@@ -301,29 +341,50 @@ class Nutritionwidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      bottom: 30,
-      left: 70,
-      right: 70,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemBuilder: (context, index) => rowItem(),
-              separatorBuilder: (context, index) => const SizedBox(height: 10),
-              itemCount: 3,
+    return Consumer<AppProvider>(
+      builder: (context, provider, child) {
+        final labelNutrients = provider.labelNutrients;
+        if (provider.isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (labelNutrients == null) {
+          return const SizedBox();
+        }
+        final labelList = labelNutrients.toLabelList();
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold),
+                  ),
+                  ListView.separated(
+                    shrinkWrap: true,
+                    itemBuilder: (context, index) =>
+                        rowItem(labelList[index].key, labelList[index].value),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 10),
+                    itemCount: labelList.length,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
