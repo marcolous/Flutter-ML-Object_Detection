@@ -80,6 +80,9 @@ extension LabelNutrientsExtension on LabelNutrients {
     addIfNotNull('Potassium', potassium);
     addIfNotNull('Calories', calories);
 
+    items
+        .sort((a, b) => double.parse(b.value).compareTo(double.parse(a.value)));
+
     return items;
   }
 }

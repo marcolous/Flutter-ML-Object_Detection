@@ -45,8 +45,9 @@ class _HomePageState extends State<HomePage> {
   late double maxImageWidgetHeight;
   late double maxImageWidgetWidth;
 
-  double score = -1;
-  String label = '';
+  List<double> finalScores = [];
+  List<String> finalLabels = [];
+  List<Bbox> finalBoxs = [];
 
   // YOLO output
   List<List<double>>? inferenceOutput;
@@ -82,7 +83,7 @@ class _HomePageState extends State<HomePage> {
     maxImageWidgetWidth = MediaQuery.of(context).size.width;
   }
 
-  Future<void> getNutritions(String label) async {
+  Future<void> getNutritions(List<String> label) async {
     await context.read<AppProvider>().getNutritionsFdcId(label);
   }
 
@@ -90,10 +91,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final ImagePicker picker = ImagePicker(); // Picker instance
 
-    const textPadding = EdgeInsets.symmetric(horizontal: 16);
-
     // Convert bounding box data to widgets
-
     return Scaffold(
       appBar: AppBar(title: const Text('YOLO')),
       body: Stack(
@@ -103,7 +101,7 @@ class _HomePageState extends State<HomePage> {
             onTap: () async {
               context.read<AppProvider>().clearLabelNutrients();
               final XFile? newImageFile =
-                  await picker.pickImage(source: ImageSource.camera);
+                  await picker.pickImage(source: ImageSource.gallery);
               if (newImageFile != null) {
                 setState(() {
                   imageFile = File(newImageFile.path);
@@ -116,7 +114,7 @@ class _HomePageState extends State<HomePage> {
                 imageHeight = image.height;
                 inferenceOutput = model.infer(image);
                 await updatePostprocess();
-                await getNutritions(label);
+                await getNutritions(finalLabels);
               }
             },
             child: SizedBox(
@@ -148,12 +146,222 @@ class _HomePageState extends State<HomePage> {
           ),
 
           const SizedBox(height: 30),
-          Positioned(
-            bottom: 30,
-            left: 70,
-            right: 70,
-            child: Nutritionwidget(title: label),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: FittedBox(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Nutritionwidget(title: finalLabels),
+              ),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  /// Run postprocessing (NMS) and update the detected boxes, scores, and classes
+  Future<void> updatePostprocess() async {
+    if (inferenceOutput == null) return;
+
+    final (newClasses, newBboxes, newScores) = model.postprocess(
+      inferenceOutput!,
+      imageWidth!,
+      imageHeight!,
+      confidenceThreshold: confidenceThreshold,
+      iouThreshold: iouThreshold,
+      agnostic: agnosticNMS,
+    );
+
+    debugPrint('Detected ${newBboxes.length} bboxes');
+
+    // final newBboxWidgets = <Bbox>[];
+    // List<double> maxScore = [];
+    // List<String> bestLabel = [];
+    // Map<double, String> scores = {};
+    // Calculate how much to resize image to fit screen
+    if (imageWidth != null && imageHeight != null) {
+      double k1 = displayWidth / imageWidth!;
+      double k2 = maxImageWidgetHeight / imageHeight!;
+      resizeFactor = min(k1, k2);
+    }
+
+    final Map<String, double> labelScores = {};
+    final Map<String, Bbox> labelBoxes = {};
+    // Accumulate max score per label
+    for (int i = 0; i < newBboxes.length; i++) {
+      final label = labels[newClasses[i]];
+      final box = newBboxes[i];
+      final area = box[2] * resizeFactor * box[3] * resizeFactor;
+      final score = newScores[i] * area;
+
+      // Take highest score per label
+      if (!labelScores.containsKey(label) || labelScores[label]! < score) {
+        Bbox bbox = Bbox(
+          box[0] * resizeFactor,
+          box[1] * resizeFactor,
+          box[2] * resizeFactor,
+          box[3] * resizeFactor,
+          label,
+          newScores[i],
+          bboxesColors[newClasses[i]],
+        );
+        labelScores[label] = score;
+        labelBoxes[label] = bbox;
+      }
+    }
+
+    // Sort entries by score descending
+    final top5 = labelScores.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    // Select top 5
+
+    setState(() {
+      classes = newClasses;
+      finalScores = top5.take(5).map((e) => e.value).toList();
+      finalLabels = top5.take(5).map((e) => e.key).toList();
+      finalBoxs = top5.take(5).map((e) => labelBoxes[e.key]!).toList();
+      bboxesWidgets = finalBoxs;
+    });
+  }
+}
+
+class Nutritionwidget extends StatefulWidget {
+  const Nutritionwidget({super.key, required this.title});
+  final List<String> title;
+
+  @override
+  State<Nutritionwidget> createState() => _NutritionwidgetState();
+}
+
+class _NutritionwidgetState extends State<Nutritionwidget> {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppProvider>(
+      builder: (context, provider, child) {
+        final labelNutrients = provider.labelNutrients;
+        if (provider.isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (labelNutrients.isEmpty) return const SizedBox();
+        final labelList = labelNutrients[0].toLabelList();
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: NutrientCard(
+            title: widget.title[0],
+            labelList: labelList,
           ),
+        );
+      },
+    );
+  }
+}
+
+class NutrientCard extends StatefulWidget {
+  const NutrientCard({
+    super.key,
+    required this.title,
+    required this.labelList,
+  });
+
+  final String title;
+  final List<MapEntry<String, String>> labelList;
+
+  @override
+  State<NutrientCard> createState() => _NutrientCardState();
+}
+
+class _NutrientCardState extends State<NutrientCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const visibleCount = 3;
+    final isExpandable = widget.labelList.length > visibleCount;
+    final rows = _expanded
+        ? widget.labelList
+        : widget.labelList.take(visibleCount).toList();
+
+    return SizedBox(
+      width: 250,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: isExpandable
+                      ? () => setState(() => _expanded = !_expanded)
+                      : null,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (isExpandable)
+                        AnimatedRotation(
+                          duration: const Duration(milliseconds: 200),
+                          turns: _expanded ? 0 : 0.5,
+                          child: const Icon(
+                            Icons.expand_more,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  child: Column(
+                    children: rows
+                        .map(
+                          (e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(e.key,
+                                    style:
+                                        const TextStyle(color: Colors.white)),
+                                Text('${e.value} g',
+                                    style: const TextStyle(
+                                        color: Color(0xffb8aaff))),
+                              ],
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 
           // Confidence threshold slider
           // Padding(
@@ -254,137 +462,3 @@ class _HomePageState extends State<HomePage> {
           //     });
           //   },
           // ),
-        ],
-      ),
-    );
-  }
-
-  /// Run postprocessing (NMS) and update the detected boxes, scores, and classes
-  Future<void> updatePostprocess() async {
-    if (inferenceOutput == null) return;
-
-    final (newClasses, newBboxes, newScores) = model.postprocess(
-      inferenceOutput!,
-      imageWidth!,
-      imageHeight!,
-      confidenceThreshold: confidenceThreshold,
-      iouThreshold: iouThreshold,
-      agnostic: agnosticNMS,
-    );
-
-    debugPrint('Detected ${newBboxes.length} bboxes');
-
-    final newBboxWidgets = <Bbox>[];
-    double maxScore = -1;
-    String bestLabel = '';
-
-    // Calculate how much to resize image to fit screen
-    if (imageWidth != null && imageHeight != null) {
-      double k1 = displayWidth / imageWidth!;
-      double k2 = maxImageWidgetHeight / imageHeight!;
-      resizeFactor = min(k1, k2);
-    }
-
-    for (int i = 0; i < newBboxes.length; i++) {
-      final box = newBboxes[i];
-      final boxClass = newClasses[i];
-
-      newBboxWidgets.add(
-        Bbox(
-          box[0] * resizeFactor,
-          box[1] * resizeFactor,
-          box[2] * resizeFactor,
-          box[3] * resizeFactor,
-          labels[boxClass],
-          newScores[i],
-          bboxesColors[boxClass],
-        ),
-      );
-
-      if (newScores[i] > maxScore) {
-        maxScore = newScores[i];
-        bestLabel = labels[boxClass];
-      }
-    }
-
-    setState(() {
-      classes = newClasses;
-      bboxes = newBboxes;
-      scores = newScores;
-      bboxesWidgets = newBboxWidgets;
-      score = maxScore;
-      label = bestLabel;
-    });
-  }
-}
-
-class Nutritionwidget extends StatelessWidget {
-  const Nutritionwidget({super.key, required this.title});
-  final String title;
-
-  Widget rowItem(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          '$value g',
-          style: const TextStyle(color: Color(0xffb8aaff)),
-        ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<AppProvider>(
-      builder: (context, provider, child) {
-        final labelNutrients = provider.labelNutrients;
-        if (provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (labelNutrients == null) {
-          return const SizedBox();
-        }
-        final labelList = labelNutrients.toLabelList();
-
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold),
-                  ),
-                  ListView.separated(
-                    shrinkWrap: true,
-                    itemBuilder: (context, index) =>
-                        rowItem(labelList[index].key, labelList[index].value),
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 10),
-                    itemCount: labelList.length,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
