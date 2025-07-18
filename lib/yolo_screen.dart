@@ -91,53 +91,53 @@ class _HomePageState extends State<HomePage> {
     // Convert bounding box data to widgets
     return Scaffold(
       appBar: AppBar(title: const Text('YOLO')),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
+      floatingActionButton: IconButton(
+          onPressed: () async {
+            context.read<AppProvider>().clearLabelNutrients();
+            final XFile? newImageFile =
+                await picker.pickImage(source: ImageSource.gallery);
+            if (newImageFile != null) {
+              setState(() {
+                imageFile = File(newImageFile.path);
+              });
+
+              // Decode image and run inference
+              final image = img.decodeImage(await newImageFile.readAsBytes())!;
+              imageWidth = image.width;
+              imageHeight = image.height;
+              inferenceOutput = model.infer(image);
+              await updatePostprocess();
+              await getNutritions(finalLabels);
+            }
+          },
+          icon: Icon(Icons.camera)),
       body: Stack(
         children: [
           // Image picker and display area
-          InkWell(
-            onTap: () async {
-              context.read<AppProvider>().clearLabelNutrients();
-              final XFile? newImageFile =
-                  await picker.pickImage(source: ImageSource.gallery);
-              if (newImageFile != null) {
-                setState(() {
-                  imageFile = File(newImageFile.path);
-                });
-
-                // Decode image and run inference
-                final image =
-                    img.decodeImage(await newImageFile.readAsBytes())!;
-                imageWidth = image.width;
-                imageHeight = image.height;
-                inferenceOutput = model.infer(image);
-                await updatePostprocess();
-                await getNutritions(finalLabels);
-              }
-            },
-            child: SizedBox(
-              height: maxImageWidgetHeight,
-              width: maxImageWidgetWidth,
-              child: Center(
-                child: Stack(
-                  children: [
-                    // Show placeholder or image
-                    if (imageFile == null)
-                      Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.file_open_outlined, size: 80),
-                          Text(
-                            'Pick an image',
-                            style: Theme.of(context).textTheme.headlineMedium,
-                          ),
-                        ],
-                      )
-                    else
-                      Image.file(imageFile!),
-                    // Overlay bounding boxes
-                    ...bboxesWidgets,
-                  ],
-                ),
+          SizedBox(
+            height: maxImageWidgetHeight,
+            width: maxImageWidgetWidth,
+            child: Center(
+              child: Stack(
+                children: [
+                  // Show placeholder or image
+                  if (imageFile == null)
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.file_open_outlined, size: 80),
+                        Text(
+                          'Pick an image',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                      ],
+                    )
+                  else
+                    Image.file(imageFile!),
+                  // Overlay bounding boxes
+                  ...bboxesWidgets,
+                ],
               ),
             ),
           ),
@@ -246,11 +246,16 @@ class _NutritionwidgetState extends State<Nutritionwidget> {
             controller: PageController(viewportFraction: .99999999),
             scrollDirection: Axis.horizontal,
             itemCount: labelNutrients.length,
-            itemBuilder: (context, index) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: NutrientCard(
-                title: widget.title[index],
-                labelList: labelNutrients[index].toLabelList(),
+            itemBuilder: (context, index) => Align(
+              alignment: Alignment.bottomCenter,
+              child: IntrinsicHeightPage(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: NutrientCard(
+                    title: widget.title[index],
+                    labelList: labelNutrients[index].toLabelList(),
+                  ),
+                ),
               ),
             ),
           ),
@@ -365,6 +370,63 @@ class _NutrientCardState extends State<NutrientCard> {
     );
   }
 }
+
+// intrinsic_height_page.dart
+class IntrinsicHeightPage extends StatefulWidget {
+  final Widget child;
+
+  const IntrinsicHeightPage({super.key, required this.child});
+
+  @override
+  State<IntrinsicHeightPage> createState() => _IntrinsicHeightPageState();
+}
+
+class _IntrinsicHeightPageState extends State<IntrinsicHeightPage> {
+  final GlobalKey _childKey = GlobalKey();
+  double? _height;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateHeight());
+  }
+
+  void _updateHeight() {
+    final context = _childKey.currentContext;
+    if (context != null) {
+      final box = context.findRenderObject() as RenderBox?;
+      final newHeight = box?.size.height;
+      if (newHeight != null && newHeight != _height) {
+        setState(() => _height = newHeight);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Re-measure on every build to catch shrinking
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateHeight());
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        height: _height,
+        child: OverflowBox(
+          maxHeight: double.infinity,
+          alignment: Alignment.bottomCenter,
+          child: KeyedSubtree(
+            key: _childKey,
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
 
 
           // Confidence threshold slider
