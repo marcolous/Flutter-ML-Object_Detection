@@ -70,9 +70,6 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     model.init(); // Load model
-    // displayWidth = MediaQuery.of(context).size.width;
-    // maxImageWidgetHeight = MediaQuery.of(context).size.height;
-    // maxImageWidgetWidth = MediaQuery.of(context).size.width;
   }
 
   @override
@@ -175,10 +172,6 @@ class _HomePageState extends State<HomePage> {
 
     debugPrint('Detected ${newBboxes.length} bboxes');
 
-    // final newBboxWidgets = <Bbox>[];
-    // List<double> maxScore = [];
-    // List<String> bestLabel = [];
-    // Map<double, String> scores = {};
     // Calculate how much to resize image to fit screen
     if (imageWidth != null && imageHeight != null) {
       double k1 = displayWidth / imageWidth!;
@@ -245,13 +238,21 @@ class _NutritionwidgetState extends State<Nutritionwidget> {
           return const Center(child: CircularProgressIndicator());
         }
         if (labelNutrients.isEmpty) return const SizedBox();
-        final labelList = labelNutrients[0].toLabelList();
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: NutrientCard(
-            title: widget.title[0],
-            labelList: labelList,
+        return SizedBox(
+          height: 400,
+          width: 250,
+          child: PageView.builder(
+            clipBehavior: Clip.none,
+            controller: PageController(viewportFraction: .99999999),
+            scrollDirection: Axis.horizontal,
+            itemCount: labelNutrients.length,
+            itemBuilder: (context, index) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: NutrientCard(
+                title: widget.title[index],
+                labelList: labelNutrients[index].toLabelList(),
+              ),
+            ),
           ),
         );
       },
@@ -340,12 +341,15 @@ class _NutrientCardState extends State<NutrientCard> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(e.key,
-                                    style:
-                                        const TextStyle(color: Colors.white)),
-                                Text('${e.value} g',
-                                    style: const TextStyle(
-                                        color: Color(0xffb8aaff))),
+                                Text(
+                                  e.key,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                Text(
+                                  '${e.value} g',
+                                  style:
+                                      const TextStyle(color: Color(0xffb8aaff)),
+                                ),
                               ],
                             ),
                           ),
